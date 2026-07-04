@@ -6,3 +6,5 @@ plotly>=5.23
 requests>=2.32
 anthropic>=0.34
 python-dotenv>=1.0
+reportlab>=4.2
+kaleido>=0.2.1

@@ -17,6 +17,7 @@ from ai import AIError, generate_investment_memo, summarize_news_article
 from comps import build_comps_table, get_default_peers, implied_valuation_range
 from dcf import DCFAssumptions, DCFModel
 from financials import CompanyData, TickerNotFoundError
+from pdf_export import generate_memo_pdf
 from utils import format_currency, format_multiple_nm, format_number, format_percent, format_ratio
 from valuation import build_valuation_summary
 
@@ -64,6 +65,10 @@ def render_sidebar() -> tuple[str, list[str]]:
     st.sidebar.caption("AI-Powered Investment Banking & Equity Research")
     ticker = st.sidebar.text_input("Company Ticker", value="AAPL").strip().upper()
     st.sidebar.divider()
+    st.sidebar.markdown(
+        "<div style='position: fixed; bottom: 1.5rem; font-size: 0.8rem; opacity: 0.6;'>Created by Keira Hirst</div>",
+        unsafe_allow_html=True,
+    )
     return ticker
 
 
@@ -317,7 +322,29 @@ def render_ai_memo_tab(company: CompanyData, valuation) -> None:
     memo = st.session_state.get(f"memo::{company.ticker}")
     if memo:
         st.markdown(memo)
-        st.download_button("Download memo (.md)", memo, file_name=f"{company.ticker}_investment_memo.md")
+
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.download_button("Download memo (.md)", memo, file_name=f"{company.ticker}_investment_memo.md")
+        with col2:
+            if st.button("📄 Prepare PDF Memo"):
+                with st.spinner("Rendering PDF..."):
+                    try:
+                        pdf_bytes = generate_memo_pdf(
+                            company, valuation, memo,
+                            dcf_result=st.session_state.get("dcf_result"),
+                            comps_result=st.session_state.get("comps_result"),
+                        )
+                        st.session_state[f"memo_pdf::{company.ticker}"] = pdf_bytes
+                    except Exception as exc:  # kaleido/reportlab rendering issues shouldn't crash the app
+                        st.error(f"Could not generate PDF: {exc}")
+
+        pdf_bytes = st.session_state.get(f"memo_pdf::{company.ticker}")
+        if pdf_bytes:
+            st.download_button(
+                "⬇️ Download PDF Memo", pdf_bytes,
+                file_name=f"{company.ticker}_investment_memo.pdf", mime="application/pdf",
+            )
     else:
         st.info("Click the button above to generate a memo. Requires ANTHROPIC_API_KEY to be set in .env.")
 
