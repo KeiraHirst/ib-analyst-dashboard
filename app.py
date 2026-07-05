@@ -18,6 +18,7 @@ from comps import build_comps_table, get_default_peers, implied_valuation_range
 from dcf import DCFAssumptions, DCFModel
 from financials import CompanyData, TickerNotFoundError
 from pdf_export import generate_memo_pdf
+from pitchbook import render_pitchbook_tab
 from utils import format_currency, format_multiple_nm, format_number, format_percent, format_ratio
 from valuation import build_valuation_summary
 
@@ -29,20 +30,223 @@ st.set_page_config(page_title="IB Dashboard", page_icon="📊", layout="wide", i
 
 
 def inject_custom_css() -> None:
-    """Restyle Streamlit's default metric widget into a Bloomberg-style KPI card."""
+    """
+    Full visual theme layer on top of Streamlit's dark base theme (set in
+    .streamlit/config.toml). Everything here is additive CSS -- no component
+    behavior changes -- aimed at a clean, modern "fintech terminal" look:
+    Inter typeface, softly-elevated cards with hover lift, pill-style tabs
+    with a gold active indicator, gradient primary buttons, and consistent
+    rounded corners/spacing throughout.
+    """
     st.markdown(
         """
         <style>
-        div[data-testid="stMetric"] {
-            background-color: #161a23;
-            border: 1px solid rgba(240, 185, 11, 0.15);
-            border-radius: 8px;
-            padding: 14px 16px 10px 16px;
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        html, body, [class*="css"] {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         }
-        div[data-testid="stMetricLabel"] { font-size: 0.8rem; opacity: 0.75; }
-        div[data-testid="stMetricValue"] { color: #f0b90b; font-size: 1.5rem; }
-        section[data-testid="stSidebar"] { border-right: 1px solid rgba(240, 185, 11, 0.15); }
+
+        /* ---------------------------------------------------------- */
+        /* Global background: subtle radial glow instead of flat black */
+        /* ---------------------------------------------------------- */
+        [data-testid="stAppViewContainer"] > .main {
+            background:
+                radial-gradient(circle at 15% 0%, rgba(240, 185, 11, 0.05), transparent 45%),
+                radial-gradient(circle at 85% 15%, rgba(45, 212, 191, 0.04), transparent 40%),
+                #0e1117;
+        }
+        .block-container { padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1280px; }
+
+        /* ---------------------------------------------------------- */
+        /* Sidebar */
+        /* ---------------------------------------------------------- */
+        section[data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #12151d 0%, #0e1117 100%);
+            border-right: 1px solid rgba(240, 185, 11, 0.12);
+        }
+        section[data-testid="stSidebar"] h1 {
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            background: linear-gradient(90deg, #f0b90b, #ffd766);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        section[data-testid="stSidebar"] .stTextInput input {
+            border-radius: 8px;
+            border: 1px solid rgba(240, 185, 11, 0.25);
+            background-color: #161a23;
+        }
+        section[data-testid="stSidebar"] .stTextInput input:focus {
+            border-color: #f0b90b;
+            box-shadow: 0 0 0 1px rgba(240, 185, 11, 0.35);
+        }
+        section[data-testid="stSidebar"] .streamlit-expanderHeader {
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        /* ---------------------------------------------------------- */
+        /* KPI metric cards */
+        /* ---------------------------------------------------------- */
+        div[data-testid="stMetric"] {
+            background: linear-gradient(160deg, #171b25 0%, #12151d 100%);
+            border: 1px solid rgba(240, 185, 11, 0.14);
+            border-radius: 12px;
+            padding: 16px 18px 12px 18px;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+        }
+        div[data-testid="stMetric"]:hover {
+            transform: translateY(-2px);
+            border-color: rgba(240, 185, 11, 0.4);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+        }
+        div[data-testid="stMetricLabel"] {
+            font-size: 0.78rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            opacity: 0.6;
+        }
+        div[data-testid="stMetricValue"] {
+            color: #f0b90b;
+            font-size: 1.55rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+        }
+
+        /* ---------------------------------------------------------- */
+        /* Tabs -- pill style with gold underline on the active tab */
+        /* ---------------------------------------------------------- */
+        div[data-baseweb="tab-list"] {
+            gap: 4px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        button[data-baseweb="tab"] {
+            border-radius: 8px 8px 0 0;
+            font-weight: 600;
+            font-size: 0.92rem;
+            color: rgba(230, 230, 230, 0.6);
+            padding: 8px 18px;
+            transition: color 0.15s ease, background-color 0.15s ease;
+        }
+        button[data-baseweb="tab"]:hover {
+            color: #e6e6e6;
+            background-color: rgba(240, 185, 11, 0.06);
+        }
+        button[data-baseweb="tab"][aria-selected="true"] {
+            color: #f0b90b;
+            background-color: rgba(240, 185, 11, 0.08);
+        }
+        div[data-baseweb="tab-highlight"] {
+            background-color: #f0b90b;
+            height: 2.5px;
+        }
+
+        /* ---------------------------------------------------------- */
+        /* Buttons */
+        /* ---------------------------------------------------------- */
+        .stButton button, .stDownloadButton button {
+            border-radius: 8px;
+            font-weight: 600;
+            border: 1px solid rgba(240, 185, 11, 0.3);
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
+        }
+        .stButton button:hover, .stDownloadButton button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(240, 185, 11, 0.15);
+        }
+        .stButton button[kind="primary"] {
+            background: linear-gradient(90deg, #f0b90b, #d99e0a);
+            border: none;
+            color: #14151a;
+        }
+
+        /* ---------------------------------------------------------- */
+        /* Containers, expanders, dataframes -- consistent rounding */
+        /* ---------------------------------------------------------- */
+        div[data-testid="stExpander"] {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            border-radius: 10px;
+        }
+        div[data-testid="stDataFrame"] {
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        hr { border-color: rgba(255, 255, 255, 0.08); }
+
+        /* ---------------------------------------------------------- */
+        /* Alerts -- left accent bar instead of flat fill */
+        /* ---------------------------------------------------------- */
+        div[data-testid="stAlertContentInfo"], div[data-testid="stAlertContentWarning"],
+        div[data-testid="stAlertContentError"], div[data-testid="stAlertContentSuccess"] {
+            border-radius: 8px;
+        }
+
+        /* ---------------------------------------------------------- */
+        /* Scrollbar */
+        /* ---------------------------------------------------------- */
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: #0e1117; }
+        ::-webkit-scrollbar-thumb { background: rgba(240, 185, 11, 0.25); border-radius: 6px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(240, 185, 11, 0.45); }
         </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_header(company: CompanyData, valuation) -> None:
+    """
+    Hero banner shown above the KPI row: company name/ticker, a sector/
+    industry/exchange badge line, and a live price with a color-coded
+    day-over-day change -- the "masthead" of the dashboard.
+    """
+    overview = company.overview
+    price = overview.get("current_price")
+    prev_close = overview.get("previous_close")
+
+    price_html = "N/A"
+    if price is not None:
+        price_html = f"${price:,.2f}"
+        if prev_close:
+            change = price - prev_close
+            pct = (change / prev_close) * 100 if prev_close else 0
+            color = "#22c55e" if change >= 0 else "#ef4444"
+            arrow = "▲" if change >= 0 else "▼"
+            price_html += (
+                f' <span style="color:{color}; font-size:0.95rem; font-weight:600;">'
+                f'{arrow} {abs(change):,.2f} ({abs(pct):.2f}%)</span>'
+            )
+
+    st.markdown(
+        f"""
+        <div style="
+            display: flex; justify-content: space-between; align-items: center;
+            flex-wrap: wrap; gap: 12px;
+            padding: 18px 24px; margin-bottom: 4px; border-radius: 14px;
+            background: linear-gradient(120deg, rgba(240,185,11,0.09), rgba(45,212,191,0.05));
+            border: 1px solid rgba(240, 185, 11, 0.18);
+        ">
+            <div>
+                <div style="font-size: 1.55rem; font-weight: 800; letter-spacing: -0.02em; color: #f5f5f5;">
+                    {overview['name']}
+                    <span style="color:#f0b90b; font-weight:700;">({overview['ticker']})</span>
+                </div>
+                <div style="font-size: 0.85rem; opacity: 0.65; margin-top: 2px;">
+                    {overview['sector']} &nbsp;·&nbsp; {overview['industry']} &nbsp;·&nbsp; {overview['exchange']}
+                </div>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-size: 1.6rem; font-weight: 800; color: #f5f5f5;">{price_html}</div>
+                <div style="font-size: 0.75rem; opacity: 0.55;">Last price</div>
+            </div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
@@ -402,10 +606,15 @@ def main() -> None:
     peer_tickers = render_peer_sidebar_controls(company)
 
     valuation = build_valuation_summary(company)
+    render_header(company, valuation)
+    st.write("")
     render_kpi_cards(company, valuation)
     st.divider()
 
-    tabs = st.tabs(["Overview", "Financials", "Valuation & Comps", "DCF Model", "AI Investment Memo", "News"])
+    tabs = st.tabs([
+        "Overview", "Financials", "Valuation & Comps", "DCF Model",
+        "Pitch Book", "AI Investment Memo", "News",
+    ])
     with tabs[0]:
         render_overview_tab(company)
     with tabs[1]:
@@ -415,8 +624,14 @@ def main() -> None:
     with tabs[3]:
         render_dcf_tab(company, dcf_assumptions)
     with tabs[4]:
-        render_ai_memo_tab(company, valuation)
+        render_pitchbook_tab(
+            company, valuation,
+            dcf_result=st.session_state.get("dcf_result"),
+            comps_result=st.session_state.get("comps_result"),
+        )
     with tabs[5]:
+        render_ai_memo_tab(company, valuation)
+    with tabs[6]:
         render_news_tab(company)
 
 

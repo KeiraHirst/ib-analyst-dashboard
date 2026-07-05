@@ -153,6 +153,7 @@ class CompanyData:
             "market_cap": info.get("marketCap"),
             "enterprise_value": info.get("enterpriseValue"),
             "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
+            "previous_close": info.get("previousClose") or info.get("regularMarketPreviousClose"),
             "shares_outstanding": info.get("sharesOutstanding"),
             "total_debt": info.get("totalDebt"),
             "total_cash": info.get("totalCash"),
