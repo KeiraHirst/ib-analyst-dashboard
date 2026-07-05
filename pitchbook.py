@@ -212,10 +212,16 @@ def render_pitchbook_tab(
     with chart_cols[0]:
         prices = company.price_history("1y")
         if not prices.empty:
-            st.plotly_chart(charts.price_history_chart(prices, company.ticker), use_container_width=True)
+            st.plotly_chart(
+                charts.price_history_chart(prices, company.ticker),
+                use_container_width=True, key=f"pitchbook_price_chart::{company.ticker}",
+            )
     with chart_cols[1]:
         if not df.empty:
-            st.plotly_chart(charts.income_statement_chart(df), use_container_width=True)
+            st.plotly_chart(
+                charts.income_statement_chart(df),
+                use_container_width=True, key=f"pitchbook_income_chart::{company.ticker}",
+            )
 
     st.divider()
     if st.button("📑 Prepare One-Page Pitch Book PDF"):
